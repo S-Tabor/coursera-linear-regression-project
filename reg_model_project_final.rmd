@@ -1,0 +1,320 @@
+---
+title: "Modeling and prediction for movies"
+output: 
+  html_document: 
+    fig_height: 4
+    highlight: pygments
+    theme: spacelab
+---
+
+## Setup
+
+### Load packages
+
+```{r load-packages, message = FALSE}
+library(ggplot2)
+library(dplyr)
+library(statsr)
+library(GGally)
+library(DAAG)
+library(devtools)
+```
+
+### Load data
+
+
+```{r load-data}
+load("movies.Rdata")
+```
+
+
+
+* * *
+## Part 1: Data
+
+
+This is an observational study which uses a random sample of movies. Since there is no random assignment, this means we can only make generalisable inferences (not causal). This allows us to find associations between variables in the study.
+
+
+
+* * *
+## Part 2: Research question
+
+**Q: How is the runtime of a movie associated with measures of the movie's poplarity and type?**
+
+Therefore, the response variable is the "runtime", and the explanatory variables are those linked to either the type of movie it is or the popularity of the movie.
+
+This is could be interest to someone who would like to know the normal length of a film given it's type (i.e. science fiction) and level of success (i.e. rating on IMDB). It might also be useful for anybody who is creating a movie but would like to make it as short as possible, maybe due to budget constraints, but would still desire the runtime to be within what is considered a normal range (i.e. say a 80% confidence interval) given the type of movie and it's expected level of success. 
+
+
+
+
+
+* * *
+## Part 3: Exploratory data analysis
+
+Given below is a list of variables for the model, either representing movie popularity or type, broken down into categorical or numerical types:
+
+
+ **Numerical:**
+
+* runtime (response variable)
+* imdb_rating
+* imdb_num_votes
+* critics_score
+* audience_score
+
+
+
+**Categorical:**
+
+* title_type
+* genre
+* mpaa_rating
+* critics rating
+* audience_rating  
+* best_pic_nom
+* best_pic_win
+
+Other variables supplied in the data that were not linked to how the movie can be categorised, or how popular the movie was, were excluded For example: release dates; previous actor/director, and not movie, awards; URLs; movie title etc. 
+
+First, we can look at the summary statistics and distribution of the response variable (runtime):
+
+
+```{r, warning = FALSE, fig.align = "center"}
+ggplot(data = movies, aes(x = runtime)) + 
+  geom_histogram(binwidth = 10, color='darkgray', fill  = 'darkblue') + 
+  labs(title = "Distribution of Response Variable: runtime" )
+
+summary(movies$runtime)
+```
+
+Here, we can see that runtimes are right moderately right skewed, with this sample of movies having an average running time of 103 minutes. 
+
+
+Next, we will check how the other numerical variables are related, looking specifically at the correlation values using a pairwise plot:
+
+```{r,warning = FALSE, fig.height=8, fig.width = 12, fig.align = "center", error=FALSE, message=FALSE} 
+
+num_cols <- c(13,14,16,18)
+
+ggpairs(movies, 
+        columns = num_cols, 
+        upper = list(continuous = wrap("cor", size = 10)), 
+        diag = list(continuous = wrap("barDiag", colour = "blue")), 
+        lower = list(continuous = wrap("smooth", colour = 'blue')))  
+
+```
+
+It can be seen here that imdb_rating, audience_score, and critics_score are all strongly correlated. Therefore, including more than one of these variables would introduce multicollinearity into the model, which we wish to avoid. Additionally, since the correlation values for these variables are all high (> 0.7), including two, or all three, of these variables would not significantly improve the predicting power of the model compared compared to using just one. In this case, we will use only the imdb_rating variable which has the highest correlation values.
+
+
+Next, since the variable imdb_num_votes was not strongly correlated with the other variables, we will look at the distribution of this variable:
+
+```{r, fig.align = "center", warning = FALSE}
+
+ggplot(data = movies, aes (x = imdb_num_votes)) + 
+  geom_histogram(binwidth = 30000, color='darkgray', fill  = 'darkblue') + 
+  labs(title = "Distribution of Variable: imdb_num_votes" )
+
+summary(movies$imdb_num_votes)
+```
+As can be seen from the above histogram, the data for imdb_num_votes is strongly right skewed. Since non-normal distributions (like the strongly skewed data above) can be problematic when is comes to making inferences about the population, it is sensible to transform this data. We will do this using a log transformation:
+
+```{r, fig.align = "center", warning= FALSE}
+
+ggplot(data = movies, aes (x = log10(imdb_num_votes))) + 
+  geom_histogram(binwidth = 0.25, color='darkgray', fill  = 'darkblue') + 
+  labs(title = "Distribution of Log Transformed Variable: log10(imdb_num_votes)" )
+
+```
+
+After the log transformation, the imdb_rating variable can now be seen to be nearly normal, and therefore suitable to use in the model.
+
+
+The last distribution to look at is for the other numeric variable, imdb_rating. This can be seen below:
+
+```{r, fig.align = "center"}
+
+ggplot(data = movies, aes (x = imdb_rating)) + 
+  geom_histogram(binwidth = 0.3, color='darkgray', fill  = 'darkblue') + 
+  labs(title = "Distribution of Variable: imdb_rating" )
+
+summary(movies$imdb_rating)
+
+```
+
+This distribution can be seen to be nearly normal with a weak to moderate left skew. As we have a large sample size (n > 30), this skew should not affect any inferences made regarding the population.
+
+For a linear regression model to be valid, the response and explanatory variables need to have a linear dependence. This can be checked using scatter plots as seen below:
+
+
+```{r, warning = FALSE, fig.align = "center"}
+
+ggplot(data = movies, aes (x = imdb_rating, y = runtime)) + 
+  geom_jitter(color = 'darkblue') + 
+  geom_smooth(method = 'lm', formula = y~x, color = 'red') + 
+  labs(title = "Scatter Plot of runtime Vs imdb_rating" )
+
+```
+
+
+```{r, fig.align = "center", warning = FALSE }
+
+ggplot(data = movies, aes (x = log10(imdb_num_votes), y = runtime)) + 
+  geom_point(color = 'darkblue') + 
+  geom_smooth(method = 'lm', formula = y~x, color = 'red') + 
+  labs(title = "Scatter Plot of runtime Vs log10(imdb_num_votes)" )
+
+
+```
+
+
+In this case, both of these explanatory variables appear to have a linear relationship with the response variable runtime. It is noticeable, however, that the imdb_rating variable does not have a constant variation of data which may pose as a problem for the model and will be discussed further in the modelling section.
+
+
+
+
+
+
+
+
+
+
+* * *
+## Part 4: Modeling
+
+For the model, a backward selection, p-value criteria model selection process will be used. This is because it is a more time efficient method than the $R^{2}$ criteria and forward selection process when there are numerous variables in the model. As the model results will be used as more of a guideline rather than a strict value - a significance level of alpha = 0.2 will be used.
+
+
+The full model and summary statistics are given below:
+
+```{r, warning = F, fig.align = "center"}
+
+
+full_model = lm(runtime ~ imdb_rating + 
+                  log10(imdb_num_votes) + 
+                  title_type + 
+                  genre + 
+                  mpaa_rating +  
+                  best_pic_nom + 
+                  best_pic_win + 
+                  top200_box, data = movies) 
+
+summary(full_model) 
+
+```
+
+Since both levels of the (Categorical) variable title_type have high p-values, title_type will be removed from the model and model 2 will be computed:
+
+
+```{r, fig.align = "center",warning = F}
+model_2 = lm(runtime ~ imdb_rating + 
+               log10(imdb_num_votes)  + 
+               genre + mpaa_rating +  
+               best_pic_nom + 
+               best_pic_win + 
+               top200_box, data = movies)
+
+summary((model_2))
+
+```
+
+After this iteration, all but one of the variables appear significant predictors of the movie running time (the categorical variables all have one or more levels which are highly significant). The only one that does not is the best_pic_win variable. This variable, however, is very close to the critical p-value (in this case, p-value = 0.2) and, at the authors discretion, deemed important and will remain in the model. Each coefficient in this model represents an increase or decrease in minutes for a predicted runtime; if the variable is numerical, this increase/decrease is for per unit of that variable. If the variable is categorical, then all but one of the levels of that variable will be set to 0 and the increase/decrease from remaining level will be added to the model.
+
+
+For the model to provide valid results, there are certain conditions that need to be met. These are:
+
+1. Linear relationships between (numerical) x and y
+2. Nearly normal residuals with mean 0
+3. Constant variability of residuals
+4. Independent residuals 
+
+
+The first condition has already been verified by the previous scatter plots with the numerical variables. The condition for nearly normal residuals can be checked using histogram and/or Q-Q plot of the residuals:
+
+```{r, fig.align = "center", warning = F}
+
+ggplot(data = model_2, aes(x = model_2$residuals)) + 
+  geom_histogram(color = 'darkgray', fill = 'darkblue', binwidth = 5)  + 
+  labs(x = "residuals", title = "Distribution of Residuals from LRM" )
+
+qqnorm(model_2$residuals, col = 'darkblue') 
+qqline(model_2$residuals, col = 'red')
+
+summary(model_2$residuals)
+
+```
+
+From the summary statistics the mean of the residuals can be seen to equal zero. However, the histogram shows that the residuals are somewhat right skewed,  due to a small proportion of outliers. The Q-Q plot also indicates an almost normal distribution, with some deviation from normality occurring on the right hand side, indicating again that the data is right skewed. As both plots show a nearly normal distribution, with the skew that is occurs appearing to be for more extreme values,  we can be satisfied condition 2 has been met.
+
+
+
+The variability of residuals can be checked by plotting the residuals against the predicted values from the model as seen below:
+
+```{r, fig.align = "center", warning = F}
+plot(model_2$residuals ~ model_2$fitted, 
+     main = 'Plot of Residuals vs Model Prediction from MLR Model', 
+     xlab = 'prediction', 
+     ylab = 'residuals', 
+     col = 'darkblue')
+```
+
+It is quite clear from this plot that the variability of residuals is not constant. The implications of this are that the values for the standard error are not entirely accurate and could therefore affect the accuracy of confidence intervals and the outcome of hypothesis tests from the model. If the model was altered to take into account the non-constancy that is present, then this would resolve this issue, however, this is outwith the scope of this project.
+
+
+To check if we have independent residuals (condition 4), we can plot the residuals as they appear in the data which would reveal any time series dependence:
+
+```{r, fig.align = "center", warning = F}
+plot(model_2$residuals, 
+     main = 'Plot of Residuals for MLR Model', 
+     xlab = 'index', 
+     ylab = 'residuals', 
+     col = 'darkblue') 
+
+
+```
+
+As can be seen from this plot, the residuals are distributed randomly, and are, therefore, independent. This is to be expected since the movie data was sampled randomly. 
+
+
+
+* * *
+## Part 5: Prediction
+
+The model can now be used to predict the running time of a movie not present in the sample data. The chosen test movie is Arrival (2016). The information for this movie was found [IMDB](https://www.imdb.com/title/tt2543164/), [Rotten Tomatoes](https://www.rottentomatoes.com/m/arrival_2016/), and [Box Office Mojo](http://www.boxofficemojo.com/movies/?id=arrival2016.htm).
+
+As mentioned previously, a 80% confidence interval will be used for the model prediction:
+
+```{r}
+arrival = data.frame(genre = 'Science Fiction & Fantasy' , 
+                     mpaa_rating = 'PG-13', 
+                     imdb_rating = 7.9, 
+                     imdb_num_votes = 454979, 
+                     best_pic_nom = 'yes', 
+                     best_pic_win = 'no', 
+                     top200_box = 'yes', 
+                     stringsAsFactors=FALSE)
+
+predict(model_2, 
+        arrival, 
+        interval = "prediction", 
+        level = 0.8)
+
+```
+
+Therefore, from the model, we are 80% confident that the runtime of the movie Arrival is between 116 and 164 minutes.
+
+
+* * *
+## Part 6: Conclusion
+
+In this instance, it is possible to check if the prediction of the model is correct or not. With the movie Arrival having a running time of 116 minutes, the prediction in this case was correct. Overall we can conclude that the explanatory variables explored during this project are significant predictors of runtime, and can be used to predict runtime to a certain degree of accuracy. There are a couple of points to note however. Firstly, the confidence level for the given interval may be lower than stated in reality due to the variability in the residuals. Secondly, the Adjusted $R^{2}$ value for the model was given to be 0.24. This means that approx. 76% of the variability of the data is not explained by the model, the result of which is a model with poor predicting capabilities.
+
+Future research, and improvements to the model, could stem from learning how to transform the data appropriately so that the non-constancy of the data is negated in the model.
+
+
+
+
+
+
